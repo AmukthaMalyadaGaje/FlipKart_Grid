@@ -3,11 +3,12 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from PIL import Image
 import re
+# Import your background removal function
+from api.background_removal import remove_background
 
 router = APIRouter()
 
 # Initialize PaddleOCR
-# Enable angle classification for rotated text
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
 
@@ -28,8 +29,12 @@ async def label_extraction(file: UploadFile = File(...)):
         # Load the image and convert to RGB
         image = Image.open(file.file).convert("RGB")
 
-        # Preprocess the image (if necessary, this can be enhanced)
-        np_image = preprocess_image(image)
+        # Remove background before OCR
+        image_with_bg_removed = remove_background(image)
+
+        # Preprocess the image (if necessary)
+        # Ensure you convert it back to Image if needed
+        np_image = preprocess_image(Image.open(image_with_bg_removed))
 
         # Use PaddleOCR for text recognition
         result = ocr.ocr(np_image)
