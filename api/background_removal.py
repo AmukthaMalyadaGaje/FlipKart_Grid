@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 from io import BytesIO
+from PIL import Image
+from api.unet_model import unet_model
 
 
 def remove_background(image_bytes):
