@@ -1,75 +1,56 @@
-from fastapi import FastAPI, HTTPException
-import requests
+# api/freshness_extraction.py
+from fastapi import APIRouter, UploadFile, File
+from fastapi.responses import JSONResponse
+from services.freshness_service import FreshnessService
+import os
+import matplotlib.pyplot as plt
 from PIL import Image
-from io import BytesIO
-import tensorflow as tf
 import numpy as np
 
-app = FastAPI()
-
-# Dummy response model for the freshness score
-
-
-class FreshnessResponse:
-    def __init__(self, freshness_score: float):
-        self.freshness_score = freshness_score
+router = APIRouter()
+# freshness_service = FreshnessService('shelf_life_model.h5')
+freshness_service = FreshnessService(
+    'C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\shelf_life_prediction\\shelf_life_model.h5')
 
 
-# Pre-trained model loading (assuming MobileNetV2 as in the earlier example)
-base_model = tf.keras.applications.MobileNetV2(
-    weights='imagenet', include_top=False)
-x = base_model.output
-x = tf.keras.layers.GlobalAveragePooling2D()(x)
-x = tf.keras.layers.Dense(1024, activation='relu')(x)
-predictions = tf.keras.layers.Dense(3, activation='softmax')(
-    x)  # Assuming 3 freshness levels
-model = tf.keras.Model(inputs=base_model.input, outputs=predictions)
-model.compile(optimizer='adam', loss='categorical_crossentropy',
-              metrics=['accuracy'])
-
-# Load the trained weights (replace with the path to your trained model)
-# model.load_weights("path_to_your_trained_model.h5")
-
-
-async def predict_freshness(image_url: str) -> float:
-    """
-    Predict the freshness score of the product based on the image URL.
-    """
+@router.post("/predict/")
+async def predict(file: UploadFile = File(...)):
     try:
-        # Fetch the image from the URL
-        response = requests.get(image_url)
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=400, detail="Failed to retrieve image")
+        # Save the uploaded file temporarily
+        with open(file.filename, "wb") as buffer:
+            buffer.write(await file.read())
 
-        image = Image.open(BytesIO(response.content)).convert("RGB")
+        # Load the image for display
+        original_image = Image.open(file.filename)
+        img_array = np.array(original_image)
 
-        # Preprocess the image
-        # Resizing the image to MobileNetV2 input size
-        image = image.resize((224, 224))
-        image_array = np.array(image) / 255.0  # Normalize pixel values
-        image_array = np.expand_dims(
-            image_array, axis=0)  # Add batch dimension
+        # Normalize the image
+        normalized_img_array = img_array / 255.0
 
-        # Predict the freshness using the model
-        predictions = model.predict(image_array)
+        # Display the original and normalized images
+        plt.figure(figsize=(10, 5))
 
-        # Returning the freshness score (example: probability for 'Fresh')
-        freshness_score = np.max(predictions)
+        # Original Image
+        plt.subplot(1, 2, 1)
+        plt.imshow(original_image)
+        plt.title("Original Image")
+        plt.axis("off")
 
-        return freshness_score
+        # Normalized Image
+        plt.subplot(1, 2, 2)
+        plt.imshow(normalized_img_array)
+        plt.title("Normalized Image")
+        plt.axis("off")
 
+        plt.show()  # Show the images
+
+        # Predict the shelf life
+        predicted_shelf_life = freshness_service.predict_shelf_life(
+            file.filename)
+
+        # Clean up: remove the saved file
+        os.remove(file.filename)
+
+        return JSONResponse(content={"predicted_shelf_life": predicted_shelf_life})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/freshness-prediction", response_model=FreshnessResponse)
-async def freshness_prediction(image_url: str):
-    """
-    API endpoint for freshness prediction.
-    """
-    try:
-        freshness_score = await predict_freshness(image_url)
-        return FreshnessResponse(freshness_score=freshness_score)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return JSONResponse(content={"error": str(e)}, status_code=500)
