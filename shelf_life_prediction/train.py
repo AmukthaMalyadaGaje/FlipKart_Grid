@@ -2,7 +2,7 @@
 import os
 import numpy as np
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from model import create_model
+from models.model import create_model
 
 # Define paths
 train_data_dir = 'dataset/train'

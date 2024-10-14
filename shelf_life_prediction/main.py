@@ -1,6 +1,5 @@
 # main.py
 from train import train_model
-from predict import predict_shelf_life
 
 if __name__ == "__main__":
     train_model()
