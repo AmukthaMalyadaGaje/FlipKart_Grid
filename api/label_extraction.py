@@ -1,9 +1,13 @@
-from paddleocr import PaddleOCR
+import cv2
 import numpy as np
+import re
+from io import BytesIO
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from PIL import Image
-import re
-from api.bg_removal_with_unet import remove_background_with_unet
+from paddleocr import PaddleOCR
+import matplotlib.pyplot as plt  # Import Matplotlib for plotting
+# Import your background removal function
+from api.background_removal import remove_background
 
 router = APIRouter()
 
@@ -17,17 +21,26 @@ async def label_extraction(file: UploadFile = File(...)):
     API endpoint to extract labels from an uploaded image using PaddleOCR.
     """
     try:
-        # Load the image and convert to RGB
-        image = Image.open(file.file).convert("RGB")
+        # Load the image as bytes
+        img_bytes = await file.read()  # Read the file content as bytes
+
+        # Print the first few bytes for debugging
+        # Optional: Check if the bytes are read correctly
+        print(img_bytes[:10])
+
+        # Open the image from bytes
+        image = Image.open(BytesIO(img_bytes)).convert("RGB")  # Open the image
 
         # Remove background before OCR
-        image_with_bg_removed = remove_background_with_unet(image)
+        # Ensure this function is defined correctly
+        image_with_bg_removed = remove_background(img_bytes)
 
-        # Preprocess the image for OCR
-        np_image = np.array(image_with_bg_removed)
+        # Convert the bytes back to a numpy array for OCR
+        nparr = np.frombuffer(image_with_bg_removed, np.uint8)
+        img_with_bg_removed = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         # Use PaddleOCR for text recognition
-        result = ocr.ocr(np_image)
+        result = ocr.ocr(img_with_bg_removed)
 
         # Initialize a list to store the recognized text
         recognized_text = []
@@ -71,6 +84,20 @@ async def label_extraction(file: UploadFile = File(...)):
                 # Add other details
                 else:
                     labels["other_details"].append(line)
+
+        # Plot original and background-removed images
+        plt.figure(figsize=(10, 5))
+        plt.subplot(1, 2, 1)
+        plt.title("Original Image")
+        plt.imshow(image)
+        plt.axis('off')
+
+        plt.subplot(1, 2, 2)
+        plt.title("Image with Background Removed")
+        plt.imshow(cv2.cvtColor(img_with_bg_removed, cv2.COLOR_BGR2RGB))
+        plt.axis('off')
+
+        plt.show()  # Display the plot
 
         return {"filename": file.filename, "labels": labels}
 
