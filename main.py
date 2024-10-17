@@ -1,11 +1,12 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.expiry_extraction import router as expiry_router  # Import the expiry extraction router
+from api.expiry_extraction import router as expiry_router  # Expiry extraction router
+from api.freshness_prediction import router as freshness_router  # Freshness prediction router
+from api.label_extraction import router as label_router  # Label extraction router
 
 app = FastAPI()
 
-# Allow CORS (you can adjust this based on your needs)
+# Allow CORS (adjust based on your needs)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,9 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the expiry extraction router
+# Include the routers
 app.include_router(expiry_router)
+app.include_router(freshness_router)
+app.include_router(label_router)  # Added a prefix to match the router in label_extraction
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the expiry extraction API!"}
+    return {"message": "Welcome to the expiry extraction API!"} 

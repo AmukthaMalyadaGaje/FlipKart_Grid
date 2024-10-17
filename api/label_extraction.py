@@ -1,25 +1,42 @@
 from paddleocr import PaddleOCR
 import numpy as np
+import cv2  # For image preprocessing
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from PIL import Image
 import re
 
-router = APIRouter()
+router = APIRouter()  # Keep the router declaration here
 
-# Initialize PaddleOCR
-# Enable angle classification for rotated text
+# Initialize PaddleOCR with angle classification enabled
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
     """
-    Convert image to a numpy array and preprocess for text detection.
+    Convert image to a numpy array and apply OpenCV preprocessing techniques to improve text extraction.
     """
+    # Convert the PIL image to a NumPy array (OpenCV format: BGR)
     img_array = np.array(image)
-    return img_array
+
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+    # Apply Gaussian blur to remove noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Apply adaptive thresholding to make text clearer
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+    )
+
+    # Optionally, apply morphology operations (dilation/erosion) if text is too thin or too thick
+    kernel = np.ones((1, 1), np.uint8)
+    processed_image = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    return processed_image
 
 
-@router.post("/label-extraction")
+@router.post("/label-extraction/")
 async def label_extraction(file: UploadFile = File(...)):
     """
     API endpoint to extract labels from an uploaded image using PaddleOCR.
@@ -28,7 +45,7 @@ async def label_extraction(file: UploadFile = File(...)):
         # Load the image and convert to RGB
         image = Image.open(file.file).convert("RGB")
 
-        # Preprocess the image (if necessary, this can be enhanced)
+        # Preprocess the image using OpenCV
         np_image = preprocess_image(image)
 
         # Use PaddleOCR for text recognition

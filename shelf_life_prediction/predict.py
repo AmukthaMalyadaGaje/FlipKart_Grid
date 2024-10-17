@@ -2,6 +2,7 @@ import numpy as np
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import load_model
 
+
 def predict_shelf_life(img_path, model):
     img = image.load_img(img_path, target_size=(150, 150))
     img_array = image.img_to_array(img)
