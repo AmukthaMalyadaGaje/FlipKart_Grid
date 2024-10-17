@@ -1,66 +1,30 @@
+# services/brand_service.py
 import os
+import cv2
 import numpy as np
 from keras.models import load_model
-from keras.preprocessing import image
-import tempfile
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+from sklearn.preprocessing import LabelEncoder
 
 
-class BrandService:
-    def __init__(self):
-        # Load your trained model
-        self.model = load_model('brand_recognition_model.h5')
-        self.class_names = self.load_class_names()  # Load class names
+class BrandRecognitionService:
+    def __init__(self, model_path, brand_images_dir):
+        self.model = load_model(model_path)
+        self.brand_images_dir = brand_images_dir
+        self.label_encoder = self.load_label_encoder()
 
-    def load_class_names(self):
-        class_names = []
-        try:
-            with open('brand_mapping.csv', 'r', encoding='utf-8') as f:  # Specify utf-8 encoding
-                # Skip header
-                next(f)
-                for line in f:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 1:  # Ensure there is at least one part
-                        class_names.append(parts[0])  # Append logo name
-        except FileNotFoundError:
-            logging.error("Class names file not found.")
-        except Exception as e:
-            logging.error(f"An error occurred while loading class names: {e}")
-        return class_names
+    def load_label_encoder(self):
+        brands = os.listdir(self.brand_images_dir)
+        return LabelEncoder().fit(brands)
 
-    def recognize_brand(self, file):
-        try:
-            # Use a temporary file for the uploaded image
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                temp_file.write(file.file.read())
-                img_path = temp_file.name  # Get the temporary file path
+    def predict_brand(self, image_path):
+        image = cv2.imread(image_path)
+        if image is None:
+            return "Image not found"
 
-            # Load and preprocess the image
-            img = image.load_img(img_path, target_size=(
-                150, 150))  # Adjust target size
-            img_array = image.img_to_array(img)
-            img_array = np.expand_dims(
-                img_array, axis=0) / 255.0  # Normalize the image
+        image = cv2.resize(image, (64, 64))
+        image = np.expand_dims(image, axis=0) / 255.0  # Normalize
 
-            # Make prediction
-            predictions = self.model.predict(img_array)
-            predicted_class = np.argmax(predictions, axis=1)[
-                0]  # Get class index
-            confidence = np.max(predictions)  # Get confidence score
-
-            # Remove the temporary file after processing
-            os.remove(img_path)
-
-            # Convert confidence to float for JSON serialization
-            confidence = float(confidence)
-
-            # Return the brand name and confidence
-            brand_name = self.class_names[predicted_class]
-            return brand_name, confidence
-
-        except Exception as e:
-            logging.error(f"Error during brand recognition: {e}")
-            return None, None  # Return None or raise an exception
+        predictions = self.model.predict(image)
+        predicted_class = self.label_encoder.inverse_transform(
+            [np.argmax(predictions)])
+        return predicted_class[0]

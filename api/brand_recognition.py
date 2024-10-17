@@ -1,14 +1,30 @@
+# api/brand_recognition.py
+import os
 from fastapi import APIRouter, File, UploadFile
-from services.brand_service import BrandService
+from services.brand_service import BrandRecognitionService
 
 router = APIRouter()
-brand_service = BrandService()
+brand_recognition_service = BrandRecognitionService(
+    model_path='C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\brandRecognition\\brand_recognition_model.h5',
+    brand_images_dir='brand_images/logos/'
+)
 
 
-@router.post("/recognize-brand")
-async def recognize_brand(file: UploadFile = File(...)):
-    brand_name, confidence = brand_service.recognize_brand(file)
-    if brand_name is not None:
-        return {"brand": brand_name, "confidence": confidence}
-    else:
-        return {"error": "Brand recognition failed."}
+@router.post("/predict_brand/")
+async def predict_brand(file: UploadFile = File(...)):
+    try:
+        # Save the uploaded file to a temporary location
+        temp_file_path = f'temp_{file.filename}'
+        with open(temp_file_path, 'wb') as f:
+            f.write(await file.read())
+
+        # Predict the brand using the uploaded image
+        predicted_brand = brand_recognition_service.predict_brand(
+            temp_file_path)
+
+        # Remove the temporary file
+        os.remove(temp_file_path)
+
+        return {"predicted_brand": predicted_brand}
+    except Exception as e:
+        return {"error": str(e)}
