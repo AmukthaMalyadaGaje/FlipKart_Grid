@@ -86,6 +86,7 @@ async def extract_highest_valid_date(image_file: UploadFile) -> DatesResponse:
 
     extracted_text = " ".join(word_info[1][0] for line in result for word_info in line)
     logger.info(f"Extracted text: {extracted_text}")
+    print(extracted_text)
 
     extracted_dates = extract_dates_from_text(extracted_text)
     current_year = datetime.now().year
