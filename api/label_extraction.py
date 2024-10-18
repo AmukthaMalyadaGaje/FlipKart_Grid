@@ -36,12 +36,15 @@ def preprocess_image(image: Image.Image) -> np.ndarray:
     return processed_image
 
 
-@router.post("/label-extraction/")
+@router.post("/label-extraction")
 async def label_extraction(file: UploadFile = File(...)):
     """
     API endpoint to extract labels from an uploaded image using PaddleOCR.
     """
+    if not file:
+        return JSONResponse(status_code=400, content={"message": "No file uploaded"})
     try:
+        print("POST")
         # Load the image and convert to RGB
         image = Image.open(file.file).convert("RGB")
 
@@ -58,6 +61,7 @@ async def label_extraction(file: UploadFile = File(...)):
         for line in result:
             for res in line:
                 recognized_text.append(res[1][0])
+        print(recognized_text)
 
         # Initialize a dictionary to hold extracted details
         labels = {
@@ -93,6 +97,7 @@ async def label_extraction(file: UploadFile = File(...)):
                 # Add other details
                 else:
                     labels["other_details"].append(line)
+        print(labels)
 
         return {"filename": file.filename, "labels": labels}
 

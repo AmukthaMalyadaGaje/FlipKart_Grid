@@ -13,7 +13,7 @@ freshness_service = FreshnessService(
 )
 
 
-@router.post("/predict/")
+@router.post("/freshness-prediction")
 async def predict(file: UploadFile = File(...)):
     try:
         print("Processing file upload...")

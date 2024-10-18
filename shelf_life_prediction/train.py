@@ -1,37 +1,50 @@
+# train.py
 import os
+import numpy as np
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from models.model import create_model
 
-# Set paths for training and testing data
-train_data_dir = 'path/to/train/directory'  # Update with your train directory
-test_data_dir = 'path/to/test/directory'      # Update with your test directory
+# Define paths
+train_data_dir = 'dataset/train'
+test_data_dir = 'dataset/test'
 
-# Define image dimensions
-input_shape = (150, 150, 3)
+# Image dimensions
+img_width, img_height = 150, 150
 
-# Create data generators
-train_datagen = ImageDataGenerator(rescale=1./255)
+# Data generators
+train_datagen = ImageDataGenerator(
+    rescale=1.0 / 255,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+test_datagen = ImageDataGenerator(rescale=1.0 / 255)
+
 train_generator = train_datagen.flow_from_directory(
     train_data_dir,
-    target_size=input_shape[:2],
+    target_size=(img_width, img_height),
     batch_size=32,
     class_mode='categorical'
 )
 
-test_datagen = ImageDataGenerator(rescale=1./255)
 test_generator = test_datagen.flow_from_directory(
     test_data_dir,
-    target_size=input_shape[:2],
+    target_size=(img_width, img_height),
     batch_size=32,
     class_mode='categorical'
 )
 
-# Get the number of classes from the training data
+# Determine the number of classes
 num_classes = len(train_generator.class_indices)
-print(f"Number of classes: {num_classes}")
 
-# Create the model with both input_shape and num_classes
-model = create_model(input_shape, num_classes)
-
-# Train the model
+# Create and train the model
+model = create_model((img_width, img_height, 3), num_classes)
 model.fit(train_generator, epochs=10, validation_data=test_generator)
+
+# Save the model
+model.save('shelf_life_model.h5')
