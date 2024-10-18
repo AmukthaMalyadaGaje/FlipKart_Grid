@@ -10,7 +10,7 @@ from api.background_removal import remove_background
 
 router = APIRouter()
 freshness_service = FreshnessService(
-    'C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\shelf_life_prediction\\shelf_life_model.h5'
+    'C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\shelf_life_prediction\\best_model.keras'
 )
 
 

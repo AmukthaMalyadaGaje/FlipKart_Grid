@@ -1,30 +1,34 @@
 # services/brand_service.py
 import os
-import cv2
 import numpy as np
-from keras.models import load_model
-from sklearn.preprocessing import LabelEncoder
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
 
 
 class BrandRecognitionService:
-    def __init__(self, model_path, brand_images_dir):
-        self.model = load_model(model_path)
+    def __init__(self, model_path: str, brand_images_dir: str):
+        self.model = tf.keras.models.load_model(model_path)
         self.brand_images_dir = brand_images_dir
-        self.label_encoder = self.load_label_encoder()
+        self.class_indices = self.load_class_indices()
 
-    def load_label_encoder(self):
+    def load_class_indices(self):
+        # Create a mapping of brand names to indices
         brands = os.listdir(self.brand_images_dir)
-        return LabelEncoder().fit(brands)
+        return {idx: brand for idx, brand in enumerate(brands)}
 
-    def predict_brand(self, image_path):
-        image = cv2.imread(image_path)
-        if image is None:
-            return "Image not found"
+    def predict_brand(self, img_path: str):
+        try:
+            img = image.load_img(img_path, target_size=(224, 224))
+            img_array = image.img_to_array(img) / 255.0  # Normalize the image
+            img_array = np.expand_dims(img_array, axis=0)
 
-        image = cv2.resize(image, (64, 64))
-        image = np.expand_dims(image, axis=0) / 255.0  # Normalize
+            preds = self.model.predict(img_array)
+            class_idx = np.argmax(preds, axis=1)[0]
 
-        predictions = self.model.predict(image)
-        predicted_class = self.label_encoder.inverse_transform(
-            [np.argmax(predictions)])
-        return predicted_class[0]
+            # Return the brand name corresponding to the predicted index
+            predicted_brand = self.class_indices.get(
+                class_idx, "Unknown Brand")
+            return predicted_brand
+        except Exception as e:
+            print(f"Error during prediction: {str(e)}")
+            return {"error": str(e)}

@@ -1,5 +1,5 @@
-# main.py
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from api.label_extraction import router as label_router
 from api.freshness_prediction import router as freshness_router
 from api.brand_recognition import router as brand_router
@@ -19,6 +19,16 @@ logging.getLogger('absl').setLevel(logging.ERROR)
 
 # Create the FastAPI application
 app = FastAPI(title="Image Processing API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    # Allows requests from this origin
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Include routers
 app.include_router(brand_router)

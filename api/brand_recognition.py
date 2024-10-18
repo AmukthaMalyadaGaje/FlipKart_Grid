@@ -2,6 +2,7 @@
 import os
 from fastapi import APIRouter, File, UploadFile
 from services.brand_service import BrandRecognitionService
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 brand_recognition_service = BrandRecognitionService(
@@ -17,7 +18,7 @@ async def predict_brand(file: UploadFile = File(...)):
         temp_file_path = f'temp_{file.filename}'
         with open(temp_file_path, 'wb') as f:
             f.write(await file.read())
-
+        print("Hello")
         # Predict the brand using the uploaded image
         predicted_brand = brand_recognition_service.predict_brand(
             temp_file_path)
@@ -25,6 +26,6 @@ async def predict_brand(file: UploadFile = File(...)):
         # Remove the temporary file
         os.remove(temp_file_path)
 
-        return {"predicted_brand": predicted_brand}
+        return JSONResponse(content={"predicted_brand": predicted_brand})
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(content={"error": str(e)}, status_code=500)
