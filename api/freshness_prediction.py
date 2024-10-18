@@ -4,19 +4,21 @@ from fastapi.responses import JSONResponse
 from services.freshness_service import FreshnessService
 from PIL import Image
 import numpy as np
-from io import BytesIO  # Import BytesIO for conversion
+from io import BytesIO
 # Import the background removal function
 from api.background_removal import remove_background
 
-router = APIRouter()
+router = APIRouter()  # Use APIRouter instead of FastAPI
 freshness_service = FreshnessService(
-    'C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\shelf_life_prediction\\best_model.keras'
+    'C:\\Users\\devad\\OneDrive\\Desktop\\Flipkart Grid\\shelf_life_prediction\\shelf_life_model.h5'
 )
 
 
-@router.post("/predict/")
+@router.post("/freshness-prediction")
 async def predict(file: UploadFile = File(...)):
     try:
+        print("Processing file upload...")
+
         # Create a temporary directory if it doesn't exist
         temp_dir = './temp'
         os.makedirs(temp_dir, exist_ok=True)
@@ -34,11 +36,10 @@ async def predict(file: UploadFile = File(...)):
         original_image.save(img_byte_arr, format='JPEG')
         img_byte_arr.seek(0)  # Seek to the beginning of the BytesIO object
 
-        # Now call the remove_background function with the JPEG bytes
-        image_with_bg_removed = remove_background(
-            img_byte_arr.getvalue())  # Pass bytes directly
+        # Call the remove_background function with the JPEG bytes
+        image_with_bg_removed = remove_background(img_byte_arr.getvalue())
 
-        # Load the JPEG bytes into a NumPy array
+        # Load the JPEG bytes into a PIL image for further processing
         processed_image = Image.open(BytesIO(image_with_bg_removed))
 
         # Save processed image to a temporary file for prediction
@@ -55,5 +56,6 @@ async def predict(file: UploadFile = File(...)):
         os.remove(processed_image_location)
 
         return JSONResponse(content={"predicted_shelf_life": predicted_shelf_life})
+
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)

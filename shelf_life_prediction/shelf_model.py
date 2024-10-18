@@ -1,112 +1,92 @@
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import EfficientNetB0
-from tensorflow.keras import layers, models
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 import os
 
-# Path to dataset
-train_dir = 'dataset/train/'
-val_dir = 'dataset/test/'
+# Set parameters
+data_dir = "dataset/train"  # Update this to your dataset path
+img_height = 180
+img_width = 180
+batch_size = 32
 
-# Image size and batch size
-IMAGE_SIZE = (224, 224)  # EfficientNetB0 uses 224x224 images by default
-BATCH_SIZE = 32
+# Function to load and preprocess images
 
-# Data Augmentation and Preprocessing
-train_datagen = ImageDataGenerator(
-    rescale=1./255,            # Normalize pixel values
-    rotation_range=20,         # Randomly rotate images by 20 degrees
-    width_shift_range=0.2,     # Randomly shift images horizontally
-    height_shift_range=0.2,    # Randomly shift images vertically
-    shear_range=0.2,           # Apply random shear transformation
-    zoom_range=0.2,            # Randomly zoom into images
-    horizontal_flip=True,      # Randomly flip images horizontally
-    fill_mode='nearest'        # Fill missing pixels after transformations
-)
 
-val_datagen = ImageDataGenerator(rescale=1./255)
+def load_and_preprocess_image(path, label):
+    img = tf.io.read_file(path)
+    try:
+        img = tf.image.decode_image(img, channels=3, expand_animations=False)
+        img.set_shape([None, None, 3])
+        img = tf.image.resize(img, [img_height, img_width])
+        img /= 255.0  # Normalize to [0, 1]
+        return img, label
+    except tf.errors.InvalidArgumentError as e:
+        print(f"Error processing image {path}: {e}")  # Log processing errors
+        return None, label
+    except Exception as e:
+        print(f"Unexpected error for image {path}: {e}")
+        return None, label
 
-# Load Training and Validation Data
-train_generator = train_datagen.flow_from_directory(
-    train_dir,
-    target_size=IMAGE_SIZE,
-    batch_size=BATCH_SIZE,
-    class_mode='categorical'  # Use 'categorical' for multi-class classification
-)
+# Load the dataset
 
-val_generator = val_datagen.flow_from_directory(
-    val_dir,
-    target_size=IMAGE_SIZE,
-    batch_size=BATCH_SIZE,
-    class_mode='categorical'
-)
 
-# Build the EfficientNet Model
-base_model = EfficientNetB0(
-    include_top=False, input_shape=(224, 224, 3), weights='imagenet')
-base_model.trainable = False  # Freeze the base model layers initially
+def load_image_dataset(data_dir):
+    class_names = os.listdir(data_dir)
+    print(f"Classes found: {class_names}")
 
-# Add custom classification layers
-model = models.Sequential([
-    base_model,
-    layers.GlobalAveragePooling2D(),  # Reduces dimensions from 2D to 1D
-    layers.Dense(128, activation='relu'),  # Fully connected layer
-    layers.Dropout(0.5),  # Dropout to avoid overfitting
-    layers.Dense(train_generator.num_classes,
-                 activation='softmax')  # Output layer
+    image_paths = []
+    labels = []
+
+    for label in class_names:
+        label_dir = os.path.join(data_dir, label)
+        if os.path.isdir(label_dir):
+            for img_file in os.listdir(label_dir):
+                img_path = os.path.join(label_dir, img_file)
+                image_paths.append(img_path)
+                # Use index as label for classification
+                labels.append(class_names.index(label))
+
+    # Create a TensorFlow Dataset
+    dataset = tf.data.Dataset.from_tensor_slices((image_paths, labels))
+    dataset = dataset.map(load_and_preprocess_image,
+                          num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    return dataset, class_names
+
+
+# Load dataset
+train_ds, class_names = load_image_dataset(data_dir)
+
+# Define the model
+model = tf.keras.Sequential([
+    tf.keras.layers.Rescaling(1./255, input_shape=(img_height, img_width, 3)),
+    tf.keras.layers.Conv2D(32, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Conv2D(64, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Conv2D(128, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(128, activation='relu'),
+    # Output layer for classes
+    tf.keras.layers.Dense(len(class_names), activation='softmax')
 ])
 
 # Compile the model
-model.compile(
-    optimizer=Adam(learning_rate=0.001),
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
-# Callbacks for early stopping and model checkpointing
-checkpoint = ModelCheckpoint(
-    'best_model.keras', monitor='val_accuracy', save_best_only=True, mode='max')
-early_stopping = EarlyStopping(
-    monitor='val_loss', patience=10, restore_best_weights=True)
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
 
 # Train the model
-history = model.fit(
-    train_generator,
-    validation_data=val_generator,
-    epochs=50,  # Increase epochs for better results
-    callbacks=[checkpoint, early_stopping],
-    verbose=1
-)
+try:
+    history = model.fit(
+        train_ds,
+        epochs=10
+    )
+except Exception as e:
+    print(f"Failed to train the model: {e}")
 
-# Save the trained model after the first phase of training
-model.save('fruit_vegetable_classifier_initial.keras')
-
-# Fine-tune the model (optional)
-base_model.trainable = True  # Unfreeze the base model layers for fine-tuning
-
-# Recompile with a lower learning rate for fine-tuning
-model.compile(
-    optimizer=Adam(learning_rate=1e-5),  # Lower learning rate for fine-tuning
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
-
-# Fine-tune the model
-history_fine_tune = model.fit(
-    train_generator,
-    validation_data=val_generator,
-    epochs=20,  # Fine-tune for additional epochs
-    callbacks=[checkpoint, early_stopping],
-    verbose=1
-)
-
-# Save the fine-tuned model
-model.save('Freshness_Model.keras')
-
-# Evaluate on the validation set
-val_loss, val_acc = model.evaluate(val_generator)
-print(f"Validation Accuracy: {val_acc * 100:.2f}%")
-
-# Save the best performing model based on validation accuracy
-# model.save('final_model.keras')
+# Save the model
+# Change this to your desired model path
+model_save_path = 'classification_model.keras'
+model.save(model_save_path)
+print(f"Model saved at: {model_save_path}")

@@ -34,8 +34,10 @@ app.add_middleware(
 app.include_router(brand_router)
 app.include_router(label_router)
 app.include_router(freshness_router)
+# Added a prefix to match the router in label_extraction
+app.include_router(label_router)
 
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Image Processing API!"}
+    return {"message": "Welcome to the expiry extraction API!"}

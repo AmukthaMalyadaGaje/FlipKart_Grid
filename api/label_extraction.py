@@ -1,19 +1,40 @@
-import cv2
+from paddleocr import PaddleOCR
 import numpy as np
-import re
-from io import BytesIO
+import cv2  # For image preprocessing
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from PIL import Image
-from paddleocr import PaddleOCR
-import matplotlib.pyplot as plt  # Import Matplotlib for plotting
-# Import your background removal function
-from api.background_removal import remove_background
+import re
 
-router = APIRouter()
+router = APIRouter()  # Keep the router declaration here
 
-# Initialize PaddleOCR
+# Initialize PaddleOCR with angle classification enabled
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
+
+
+def preprocess_image(image: Image.Image) -> np.ndarray:
+    """
+    Convert image to a numpy array and apply OpenCV preprocessing techniques to improve text extraction.
+    """
+    # Convert the PIL image to a NumPy array (OpenCV format: BGR)
+    img_array = np.array(image)
+
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+    # Apply Gaussian blur to remove noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Apply adaptive thresholding to make text clearer
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+    )
+
+    # Optionally, apply morphology operations (dilation/erosion) if text is too thin or too thick
+    kernel = np.ones((1, 1), np.uint8)
+    processed_image = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    return processed_image
 
 
 @router.post("/label-extraction")
@@ -21,40 +42,27 @@ async def label_extraction(file: UploadFile = File(...)):
     """
     API endpoint to extract labels from an uploaded image using PaddleOCR.
     """
-    print("Request Received")
-
     if not file:
-        return JSONResponse(content={"detail": "No file uploaded"}, status_code=400)
-
+        return JSONResponse(status_code=400, content={"message": "No file uploaded"})
     try:
-        # Load the image as bytes
-        img_bytes = await file.read()
+        print("POST")
+        # Load the image and convert to RGB
+        image = Image.open(file.file).convert("RGB")
 
-        # Optional: Check if the bytes are read correctly (debugging)
-        print(f"First 10 bytes of the uploaded file: {img_bytes[:10]}")
-
-        # Open the image from bytes
-        image = Image.open(BytesIO(img_bytes)).convert(
-            "RGB")  # Ensure image is in RGB format
-
-        # Remove background before OCR
-        # Make sure `remove_background` returns the image in a byte array or a numpy array
-        image_with_bg_removed = remove_background(img_bytes)
-
-        # Convert the background-removed image back to a numpy array for OCR
-        nparr = np.frombuffer(image_with_bg_removed, np.uint8)
-        img_with_bg_removed = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # Preprocess the image using OpenCV
+        np_image = preprocess_image(image)
 
         # Use PaddleOCR for text recognition
-        result = ocr.ocr(img_with_bg_removed)
+        result = ocr.ocr(np_image)
 
         # Initialize a list to store the recognized text
         recognized_text = []
 
-        # Extract recognized text from the OCR result
+        # Extract recognized text from result
         for line in result:
             for res in line:
                 recognized_text.append(res[1][0])
+        print(recognized_text)
 
         # Initialize a dictionary to hold extracted details
         labels = {
@@ -79,33 +87,19 @@ async def label_extraction(file: UploadFile = File(...)):
                     labels["expiry_date"] = re.search(
                         r'expiry[:\s]*([\w\s]+)', line, re.IGNORECASE).group(1).strip()
 
-                # Extract Company Name (first unmatched text)
+                # Extract Company Name
                 elif labels["company_name"] is None:
                     labels["company_name"] = line
 
-                # Extract Product Name (second unmatched text)
+                # Extract Product Name
                 elif labels["product_name"] is None:
                     labels["product_name"] = line
 
                 # Add other details
                 else:
                     labels["other_details"].append(line)
+        print(labels)
 
-        # Plot original and background-removed images for debugging purposes (Optional)
-        plt.figure(figsize=(10, 5))
-        plt.subplot(1, 2, 1)
-        plt.title("Original Image")
-        plt.imshow(image)
-        plt.axis('off')
-
-        plt.subplot(1, 2, 2)
-        plt.title("Image with Background Removed")
-        plt.imshow(cv2.cvtColor(img_with_bg_removed, cv2.COLOR_BGR2RGB))
-        plt.axis('off')
-
-        plt.show()  # Remove or modify this for production environments
-
-        # Return extracted labels in the response
         return {"filename": file.filename, "labels": labels}
 
     except Exception as e:

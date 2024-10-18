@@ -1,11 +1,25 @@
-# main.py
-from train import train_model
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from api.expiry_extraction import router as expiry_router  # Expiry extraction router
+from api.freshness_prediction import router as freshness_router  # Freshness prediction router
+from api.label_extraction import router as label_router  # Label extraction router
 
-if __name__ == "__main__":
-    train_model()
+app = FastAPI()
 
-    # To predict a shelf life for a new image, uncomment the following lines:
-    # model = load_model('shelf_life_model.h5')
-    # new_image_path = 'path_to_new_image.jpg'  # Update with the actual path
-    # predicted_shelf_life = predict_shelf_life(new_image_path, model)
-    # print(f"Predicted Shelf Life: {predicted_shelf_life}")
+# Allow CORS (adjust based on your needs)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this to specific domains if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include the routers
+app.include_router(expiry_router, prefix="/expiry")
+app.include_router(freshness_router, prefix="/freshness")
+app.include_router(label_router, prefix="/label")  # Make sure this matches the label router in label_extraction.py
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the expiry extraction API!"}
