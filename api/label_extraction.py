@@ -1,14 +1,39 @@
 from paddleocr import PaddleOCR
 import numpy as np
+import cv2  # For image preprocessing
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from PIL import Image
 import re
-from api.bg_removal_with_unet import remove_background_with_unet
 
-router = APIRouter()
+router = APIRouter()  # Keep the router declaration here
 
-# Initialize PaddleOCR
+# Initialize PaddleOCR with angle classification enabled
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
+
+
+def preprocess_image(image: Image.Image) -> np.ndarray:
+    """
+    Convert image to a numpy array and apply OpenCV preprocessing techniques to improve text extraction.
+    """
+    # Convert the PIL image to a NumPy array (OpenCV format: BGR)
+    img_array = np.array(image)
+
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+    # Apply Gaussian blur to remove noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Apply adaptive thresholding to make text clearer
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+    )
+
+    # Optionally, apply morphology operations (dilation/erosion) if text is too thin or too thick
+    kernel = np.ones((1, 1), np.uint8)
+    processed_image = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    return processed_image
 
 
 @router.post("/label-extraction")
@@ -16,15 +41,15 @@ async def label_extraction(file: UploadFile = File(...)):
     """
     API endpoint to extract labels from an uploaded image using PaddleOCR.
     """
+    if not file:
+        return JSONResponse(status_code=400, content={"message": "No file uploaded"})
     try:
+        print("POST")
         # Load the image and convert to RGB
         image = Image.open(file.file).convert("RGB")
 
-        # Remove background before OCR
-        image_with_bg_removed = remove_background_with_unet(image)
-
-        # Preprocess the image for OCR
-        np_image = np.array(image_with_bg_removed)
+        # Preprocess the image using OpenCV
+        np_image = preprocess_image(image)
 
         # Use PaddleOCR for text recognition
         result = ocr.ocr(np_image)
@@ -36,6 +61,7 @@ async def label_extraction(file: UploadFile = File(...)):
         for line in result:
             for res in line:
                 recognized_text.append(res[1][0])
+        print(recognized_text)
 
         # Initialize a dictionary to hold extracted details
         labels = {
@@ -71,6 +97,7 @@ async def label_extraction(file: UploadFile = File(...)):
                 # Add other details
                 else:
                     labels["other_details"].append(line)
+        print(labels)
 
         return {"filename": file.filename, "labels": labels}
 
