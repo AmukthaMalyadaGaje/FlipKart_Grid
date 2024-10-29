@@ -1,103 +1,124 @@
 import os
-import json
-import pandas as pd
-import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
-from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-# Load brand mapping CSV file
-df = pd.read_csv('brand_mapping.csv')
-
-# Check for missing images and remove brands with missing images
-image_files = set(os.listdir('brand_images'))
-missing_images = []
-
-for index, row in df.iterrows():
-    if row['fileName'] not in image_files:
-        missing_images.append((row['logoName'], row['fileName']))
-
-# Create a set of brands to remove based on missing images
-brands_to_remove = {brand for brand, _ in missing_images}
-
-# Filter the DataFrame to exclude these brands
-df_cleaned = df[~df['logoName'].isin(brands_to_remove)]
-
-# Count occurrences of each logoName
-label_counts = df_cleaned['logoName'].value_counts()
-print("Label counts before filtering:", label_counts)
-
-# Set the minimum number of samples required
-min_samples = 2
-
-# Filter out brands that do not meet the minimum sample requirement
-brands_to_keep = label_counts[label_counts >= min_samples].index
-df_filtered = df_cleaned[df_cleaned['logoName'].isin(brands_to_keep)]
-
-# Print the cleaned DataFrame
-print("Filtered DataFrame:", df_filtered)
-
-# Create training and validation sets
-train_df, test_df = train_test_split(
-    df_filtered, test_size=0.45, random_state=42, stratify=df_filtered['logoName'])
-
-# Update the number of unique classes based on the training data
-num_classes = len(train_df['logoName'].unique())
-print("Number of unique classes for model:", num_classes)
-
-# Set parameters
-img_height, img_width = 150, 150  # Adjust according to your needs
+# Define paths and hyperparameters
+dataset_dir = 'dataset'  # Update this to your dataset path
+image_size = (224, 224)
 batch_size = 32
+epochs_top_level = 10
+epochs_sub_level = 10
 
-# Create ImageDataGenerator instances
-train_datagen = ImageDataGenerator(rescale=1.0/255.0)
-test_datagen = ImageDataGenerator(rescale=1.0/255.0)
+# First Stage: Top-level classification (e.g., 'apples', 'bananas')
 
-# Create generators
-train_generator = train_datagen.flow_from_dataframe(
-    dataframe=train_df,
-    directory='brand_images',
-    x_col='fileName',
-    y_col='logoName',
-    target_size=(img_height, img_width),
-    class_mode='categorical',  # Use categorical for multi-class
-    batch_size=batch_size
+# Data generators for the first level of classification
+train_datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+
+train_generator = train_datagen.flow_from_directory(
+    dataset_dir,
+    target_size=image_size,
+    batch_size=batch_size,
+    class_mode='categorical',
+    subset='training'
 )
 
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    directory='brand_images',
-    x_col='fileName',
-    y_col='logoName',
-    target_size=(img_height, img_width),
-    class_mode='categorical',  # Use categorical for multi-class
-    batch_size=batch_size
+validation_generator = train_datagen.flow_from_directory(
+    dataset_dir,
+    target_size=image_size,
+    batch_size=batch_size,
+    class_mode='categorical',
+    subset='validation'
 )
 
-# Define the model
-model = Sequential([
-    Conv2D(32, (3, 3), activation='relu',
-           input_shape=(img_height, img_width, 3)),
-    MaxPooling2D(pool_size=(2, 2)),
-    Conv2D(64, (3, 3), activation='relu'),
-    MaxPooling2D(pool_size=(2, 2)),
-    Flatten(),
-    Dense(128, activation='relu'),
-    # Match output shape to number of classes
-    Dense(num_classes, activation='softmax')
-])
+# Load a pre-trained model (ResNet50) without the top layers
+base_model = ResNet50(weights='imagenet', include_top=False,
+                      input_shape=(224, 224, 3))
+
+# Add new layers for classification
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(1024, activation='relu')(x)
+predictions = Dense(train_generator.num_classes, activation='softmax')(x)
+
+# Create the model
+top_level_model = Model(inputs=base_model.input, outputs=predictions)
+
+# Freeze the base model's layers
+for layer in base_model.layers:
+    layer.trainable = False
 
 # Compile the model
-model.compile(optimizer='adam', loss='categorical_crossentropy',
-              metrics=['accuracy'])
+top_level_model.compile(optimizer=Adam(learning_rate=0.0001),
+                        loss='categorical_crossentropy', metrics=['accuracy'])
 
-# Train the model
-model.fit(train_generator, epochs=10, validation_data=test_generator)
+# Train the top-level classifier
+top_level_model.fit(
+    train_generator,
+    validation_data=validation_generator,
+    epochs=epochs_top_level
+)
 
-# Save the model
-model.save('brand_recognition_model.h5')
+# Save the top-level model
+top_level_model.save('top_level_classifier.h5')
 
-# Print model summary
-model.summary()
+
+# Second Stage: Train a subcategory classifier for the top-level category predicted
+
+def train_subcategory_model(top_category):
+    # Subdirectory for the top-level category
+    subdir = os.path.join(dataset_dir, top_category)
+
+    # Create data generators for the subdirectory
+    train_subdir_gen = train_datagen.flow_from_directory(
+        subdir,
+        target_size=image_size,
+        batch_size=batch_size,
+        class_mode='categorical',
+        subset='training'
+    )
+
+    validation_subdir_gen = train_datagen.flow_from_directory(
+        subdir,
+        target_size=image_size,
+        batch_size=batch_size,
+        class_mode='categorical',
+        subset='validation'
+    )
+
+    # Load a new ResNet50 model for subcategory classification
+    base_model = ResNet50(weights='imagenet',
+                          include_top=False, input_shape=(224, 224, 3))
+
+    # Add classification layers for subcategories
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(1024, activation='relu')(x)
+    sub_predictions = Dense(train_subdir_gen.num_classes,
+                            activation='softmax')(x)
+
+    # Create the subcategory classifier model
+    sub_model = Model(inputs=base_model.input, outputs=sub_predictions)
+
+    # Freeze the base model's layers
+    for layer in base_model.layers:
+        layer.trainable = False
+
+    # Compile the subcategory model
+    sub_model.compile(optimizer=Adam(learning_rate=0.0001),
+                      loss='categorical_crossentropy', metrics=['accuracy'])
+
+    # Train the subcategory classifier
+    sub_model.fit(
+        train_subdir_gen,
+        validation_data=validation_subdir_gen,
+        epochs=epochs_sub_level
+    )
+
+    # Save the subcategory model
+    sub_model.save('subcategory_classifier.h5')
+
+# Call this function once the top-level category is predicted to train the subcategory model
