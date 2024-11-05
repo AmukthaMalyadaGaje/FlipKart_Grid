@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.label_extraction import router as label_router
 from api.freshness_prediction import router as freshness_router
-from api.brand_recognition import router as brand_router
+# from api.brand_recognition import router as brand_router
 from api.expiry_extraction import router as expiry_router
 import os
 import warnings
@@ -32,7 +32,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(brand_router)
+# app.include_router(brand_router)
 app.include_router(label_router)
 app.include_router(expiry_router)
 app.include_router(freshness_router)
